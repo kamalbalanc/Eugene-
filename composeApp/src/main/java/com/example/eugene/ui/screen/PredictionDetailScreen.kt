@@ -246,46 +246,29 @@ fun PredictionDetailScreen(
                             }
                         }
 
-                        // 2. Overview / Prediction Description Card
+                        // 2. Overview / Prediction Description Card (Removed description as requested)
                         item {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                shape = EugeneShapes.card,
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Text(
-                                        text = prediction.description,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        lineHeight = 20.sp
-                                    )
-
-                                    if (prediction.status == PredictionStatus.RESOLVED && prediction.resolvedOutcomeId != null) {
-                                        val resolvedOpt = prediction.options.firstOrNull { it.id == prediction.resolvedOutcomeId }
-                                        if (resolvedOpt != null) {
-                                            Spacer(modifier = Modifier.height(12.dp))
-                                            Card(
-                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                                                shape = EugeneShapes.card,
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(12.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Icon(Icons.Default.Verified, contentDescription = "Resolved", tint = MaterialTheme.colorScheme.primary)
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Text(
-                                                        text = "RESOLVED OUTCOME: ${resolvedOpt.text}",
-                                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                                    )
-                                                }
-                                            }
+                            if (prediction.status == PredictionStatus.RESOLVED && prediction.resolvedOutcomeId != null) {
+                                val resolvedOpt = prediction.options.firstOrNull { it.id == prediction.resolvedOutcomeId }
+                                if (resolvedOpt != null) {
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                        shape = EugeneShapes.card,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.Verified, contentDescription = "Resolved", tint = MaterialTheme.colorScheme.primary)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "RESOLVED OUTCOME: ${resolvedOpt.text}",
+                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
                                         }
                                     }
                                 }
@@ -299,14 +282,6 @@ fun PredictionDetailScreen(
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp, vertical = 8.dp)
                             ) {
-                                Text(
-                                    text = "Current Distribution",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(10.dp))
-
                                 OutcomeBarsList(
                                     options = prediction.options,
                                     selectedOptionId = null,
@@ -342,7 +317,7 @@ fun PredictionDetailScreen(
                             }
                         }
 
-                        // 4. Sticky/Flat simplified Tabs (Timeline, Reasoning, Discourse)
+                        // 4. Sticky/Flat Tabs (Timeline, Reasoning, Discourse)
                         item {
                             TabRow(
                                 selectedTabIndex = when (currentTab) {
@@ -355,7 +330,7 @@ fun PredictionDetailScreen(
                                 modifier = Modifier.padding(vertical = 12.dp)
                             ) {
                                 val tabsList = listOf(DetailTab.TIMELINE, DetailTab.REASONING, DetailTab.DISCOURSE)
-                                tabsList.forEachIndexed { index, tab ->
+                                tabsList.forEach { tab ->
                                     val tabLabel = when (tab) {
                                         DetailTab.TIMELINE -> "Timeline"
                                         DetailTab.REASONING -> "Reasoning"
@@ -385,14 +360,6 @@ fun PredictionDetailScreen(
                                             .fillMaxWidth()
                                             .padding(horizontal = 16.dp, vertical = 4.dp)
                                     ) {
-                                        Text(
-                                            text = "How people's seconds have changed",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.padding(bottom = 12.dp)
-                                        )
-
                                         // Timeline visual elements card block
                                         TimelineContent(
                                             prediction = prediction,
@@ -900,6 +867,10 @@ fun SecondSheet(
     }
 }
 
+private fun cleanOptionText(text: String): String {
+    return text.replace(Regex("\\s*\\([^)]*\\)\\s*"), "").trim()
+}
+
 @Composable
 fun TimelineContent(
     prediction: Prediction,
@@ -912,48 +883,13 @@ fun TimelineContent(
     var scrubbedSnapshot by remember { mutableStateOf<SecondingSnapshot?>(null) }
     var scrubbedIndex by remember { mutableStateOf<Int?>(null) }
 
+    val isScrubbing = scrubbedSnapshot != null
     // Always fallback to the latest snapshot when not scrubbing, or if scrubbing is released
     val activeSnapshot = scrubbedSnapshot ?: snapshots.lastOrNull()
 
     Column(
         modifier = Modifier.fillMaxWidth()
     ) {
-        // Timeframe selector row
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Timeframe:",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.weight(1f))
-
-            TimeRange.values().forEach { range ->
-                val isSelected = selectedTimeRange == range
-                val label = when (range) {
-                    TimeRange.DAY -> "24H"
-                    TimeRange.WEEK -> "1W"
-                    TimeRange.ALL -> "ALL"
-                }
-
-                InputChip(
-                    selected = isSelected,
-                    onClick = { viewModel.selectTimeRange(range) },
-                    label = { Text(label, fontWeight = FontWeight.Bold) },
-                    colors = InputChipDefaults.inputChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    ),
-                    modifier = Modifier.testTag("timeframe_${range.name.lowercase()}")
-                )
-            }
-        }
-
         if (snapshots.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -981,82 +917,7 @@ fun TimelineContent(
                 }
             }
         } else {
-            // Historical distribution values card
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                shape = EugeneShapes.card,
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (scrubbedSnapshot != null) "HISTORICAL SNAPSHOT" else "CURRENT DISTRIBUTION",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (scrubbedSnapshot != null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
-                        )
-                        
-                        activeSnapshot?.let {
-                            Text(
-                                text = formatInstant(it.timestamp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Outcome values breakdown
-                    prediction.options.forEach { option ->
-                        val pct = activeSnapshot?.outcomes?.find { it.outcomeId == option.id }?.percentage ?: 0
-                        val color = EugeneColors.getAccentColor(option.accent, isDark)
-                        
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 3.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(color)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = option.text,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            Text(
-                                text = "$pct%",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = color
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Canvas Chart Box
+            // 1. Chart first
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1132,7 +993,7 @@ fun TimelineContent(
                     val width = size.width
                     val height = size.height
 
-                    // 1. Draw horizontal grid lines
+                    // Draw horizontal grid lines
                     val gridLines = listOf(0.0f, 0.25f, 0.50f, 0.75f, 1.0f)
                     gridLines.forEach { frac ->
                         val y = height * frac
@@ -1144,7 +1005,7 @@ fun TimelineContent(
                         )
                     }
 
-                    // 2. Draw historical paths for each option
+                    // Draw historical paths for each option
                     prediction.options.forEach { option ->
                         val color = EugeneColors.getAccentColor(option.accent, isDark)
                         val path = Path()
@@ -1172,7 +1033,7 @@ fun TimelineContent(
                         )
                     }
 
-                    // 3. Draw vertical scrubbing guide line if user is active
+                    // Draw vertical scrubbing guide line if user is active
                     scrubbedIndex?.let { index ->
                         val scrubbedX = (index.toFloat() / (snapshots.size - 1)) * width
                         
@@ -1202,6 +1063,143 @@ fun TimelineContent(
                                 radius = 4.dp.toPx(),
                                 center = androidx.compose.ui.geometry.Offset(scrubbedX, scrubbedY)
                             )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 2. Time range second (Timeframe selector row, without "Timeframe:" label)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TimeRange.values().forEach { range ->
+                    val isSelected = selectedTimeRange == range
+                    val label = when (range) {
+                        TimeRange.DAY -> "24H"
+                        TimeRange.WEEK -> "1W"
+                        TimeRange.ALL -> "ALL"
+                    }
+
+                    InputChip(
+                        selected = isSelected,
+                        onClick = { viewModel.selectTimeRange(range) },
+                        label = { Text(label, fontWeight = FontWeight.Bold) },
+                        colors = InputChipDefaults.inputChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
+                        modifier = Modifier.testTag("timeframe_${range.name.lowercase()}")
+                    )
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                activeSnapshot?.let {
+                    Text(
+                        text = formatInstant(it.timestamp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            // 3. Distribution third (Horizontal layout of options vertically stacked)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                shape = EugeneShapes.card,
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        prediction.options.forEach { option ->
+                            val pct = activeSnapshot?.outcomes?.find { it.outcomeId == option.id }?.percentage ?: 0
+                            val color = EugeneColors.getAccentColor(option.accent, isDark)
+                            
+                            // Dynamic truncation limit based on options count:
+                            // 6 options -> 6 chars max, 5 options -> 8 chars max, 4 options -> 10 chars max, etc.
+                            val maxChars = 6 + (6 - prediction.options.size) * 2
+                            val baseCleanText = cleanOptionText(option.text)
+                            val truncatedText = if (baseCleanText.length > maxChars) {
+                                baseCleanText.take(maxChars) + "…"
+                            } else {
+                                baseCleanText
+                            }
+                            
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(horizontal = 4.dp).weight(1f)
+                            ) {
+                                Text(
+                                    text = truncatedText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                
+                                Spacer(modifier = Modifier.height(4.dp))
+                                
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = "$pct%",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = color
+                                    )
+                                    
+                                    // Change delta since the start of selected timeframe
+                                    if (snapshots.size > 1 && !isScrubbing) {
+                                        val firstSnapshot = snapshots.firstOrNull()
+                                        val firstPct = firstSnapshot?.outcomes?.find { it.outcomeId == option.id }?.percentage ?: pct
+                                        val diff = pct - firstPct
+                                        val diffText = if (diff > 0) "+$diff" else "$diff"
+                                        val diffColor = if (diff > 0) {
+                                            if (isDark) EugeneColors.DarkSage else EugeneColors.LightSage
+                                        } else if (diff < 0) {
+                                            if (isDark) EugeneColors.DarkOrange else EugeneColors.LightOrange
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        }
+                                        
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text(
+                                            text = "($diffText%)",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                            color = diffColor
+                                        )
+                                    }
+                                }
+                                
+                                Spacer(modifier = Modifier.height(4.dp))
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .width(40.dp)
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(color)
+                                )
+                            }
                         }
                     }
                 }

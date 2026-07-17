@@ -79,13 +79,8 @@ fun OutcomeOptionBar(
         }
     }
 
-    // Determine bar color based on status guidelines:
-    // Sage (leading), Orange (trailing), Neutral/Accent for others
-    val barColor = when {
-        isLeading -> if (isDark) EugeneColors.DarkSage else EugeneColors.LightSage
-        isTrailing -> if (isDark) EugeneColors.DarkOrange else EugeneColors.LightOrange
-        else -> EugeneColors.getAccentColor(option.accent, isDark)
-    }
+    // Determine bar color to match the distribution exactly
+    val barColor = EugeneColors.getAccentColor(option.accent, isDark)
 
     // Animate progress percentage from 0 to actual value
     var progressTarget by remember { mutableStateOf(0f) }
@@ -114,15 +109,10 @@ fun OutcomeOptionBar(
                 onSelect?.invoke()
             }
             .drawBehind {
-                // Draw custom progressive overlay
+                // Draw custom progressive overlay with matching option color at lower opacity
                 drawRect(
-                    color = barColor.copy(alpha = if (isSelected) 0.25f else 0.12f),
+                    color = barColor.copy(alpha = if (isSelected) 0.28f else 0.15f),
                     size = size.copy(width = size.width * animatedProgress)
-                )
-                // Thin left colored vertical indicator
-                drawRect(
-                    color = barColor,
-                    size = size.copy(width = 4.dp.toPx())
                 )
             }
             .padding(horizontal = 12.dp),
@@ -147,7 +137,7 @@ fun OutcomeOptionBar(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = option.text,
+                        text = cleanOptionText(option.text),
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                             color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
@@ -210,3 +200,8 @@ fun OutcomeBarsList(
         }
     }
 }
+
+private fun cleanOptionText(text: String): String {
+    return text.replace(Regex("\\s*\\([^)]*\\)\\s*"), "").trim()
+}
+
