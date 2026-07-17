@@ -31,6 +31,57 @@ import org.koin.compose.viewmodel.koinViewModel
 import com.example.eugene.ui.system.DebugMenu
 import com.example.eugene.ui.system.SessionExpiryDialog
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun MainBottomBar(currentRoute: String, navController: androidx.navigation.NavHostController) {
+    ShortNavigationBar(
+        containerColor = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.testTag("bottom_nav_bar")
+    ) {
+        ShortNavigationBarItem(
+            selected = currentRoute == "home",
+            onClick = {
+                navController.navigate("home") {
+                    popUpTo("home") { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            },
+            icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+            label = { Text("Home") },
+            modifier = Modifier.testTag("nav_item_home")
+        )
+
+        ShortNavigationBarItem(
+            selected = currentRoute == "explore",
+            onClick = {
+                navController.navigate("explore") {
+                    popUpTo("home") { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            },
+            icon = { Icon(Icons.Default.Explore, contentDescription = "Explore") },
+            label = { Text("Explore") },
+            modifier = Modifier.testTag("nav_item_explore")
+        )
+
+        ShortNavigationBarItem(
+            selected = currentRoute == "profile",
+            onClick = {
+                navController.navigate("profile") {
+                    popUpTo("home") { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            },
+            icon = { Icon(Icons.Default.Person, contentDescription = "Profile") },
+            label = { Text("Profile") },
+            modifier = Modifier.testTag("nav_item_profile")
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App() {
@@ -58,52 +109,7 @@ fun App() {
                     modifier = Modifier.testTag("app_scaffold"),
                     bottomBar = {
                         if (isTopLevelRoute) {
-                            NavigationBar(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                modifier = Modifier.testTag("bottom_nav_bar")
-                            ) {
-                                NavigationBarItem(
-                                    selected = currentRoute == "home",
-                                    onClick = {
-                                        navController.navigate("home") {
-                                            popUpTo("home") { saveState = true }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
-                                    icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                                    label = { Text("Home") },
-                                    modifier = Modifier.testTag("nav_item_home")
-                                )
-
-                                NavigationBarItem(
-                                    selected = currentRoute == "explore",
-                                    onClick = {
-                                        navController.navigate("explore") {
-                                            popUpTo("home") { saveState = true }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
-                                    icon = { Icon(Icons.Default.Explore, contentDescription = "Explore") },
-                                    label = { Text("Explore") },
-                                    modifier = Modifier.testTag("nav_item_explore")
-                                )
-
-                                NavigationBarItem(
-                                    selected = currentRoute == "profile",
-                                    onClick = {
-                                        navController.navigate("profile") {
-                                            popUpTo("home") { saveState = true }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
-                                    icon = { Icon(Icons.Default.Person, contentDescription = "Profile") },
-                                    label = { Text("Profile") },
-                                    modifier = Modifier.testTag("nav_item_profile")
-                                )
-                            }
+                            MainBottomBar(currentRoute = currentRoute, navController = navController)
                         }
                     },
                     floatingActionButton = {

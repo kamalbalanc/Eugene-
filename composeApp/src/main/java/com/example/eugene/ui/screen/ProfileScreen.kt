@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -67,7 +69,7 @@ fun ProfileScreen(
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack, modifier = Modifier.testTag("profile_back_button")) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
                 },
@@ -544,7 +546,7 @@ fun ProfileScreen(
                                         MilestoneBadgeItem(
                                             name = "Rising Tier",
                                             desc = "Recognized predictor. Unlocks at 100+ Reputation.",
-                                            icon = Icons.Default.TrendingUp,
+                                            icon = Icons.AutoMirrored.Filled.TrendingUp,
                                             isEarned = isRisingUnlocked
                                         )
                                         MilestoneBadgeItem(
@@ -561,7 +563,7 @@ fun ProfileScreen(
                                         )
 
                                         Spacer(modifier = Modifier.height(16.dp))
-                                        Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                         Spacer(modifier = Modifier.height(16.dp))
 
                                         // Achievement Badges Group

@@ -208,14 +208,14 @@ fun StepProgressBar(currentStep: CreateStep) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = currentStep.name.replace("_", " ").lowercase().capitalize(),
+                text = currentStep.name.replace("_", " ").lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.primary
             )
         }
         Spacer(modifier = Modifier.height(6.dp))
         LinearProgressIndicator(
-            progress = progress,
+            progress = { progress },
             modifier = Modifier.fillMaxWidth().height(4.dp),
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.surfaceVariant
@@ -304,7 +304,7 @@ fun StepCategory(
                     ) {
                         RadioButton(selected = isSelected, onClick = { onSelect(cat) })
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text(cat.name.lowercase().capitalize(), fontWeight = FontWeight.Bold)
+                        Text(cat.name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }, fontWeight = FontWeight.Bold)
                     }
                 }
             }

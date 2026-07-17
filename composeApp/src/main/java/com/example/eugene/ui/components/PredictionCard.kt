@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.BusinessCenter
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Gavel
@@ -25,7 +26,6 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.SportsBasketball
-import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -285,7 +285,7 @@ private fun getCategoryIcon(category: PredictionCategory): ImageVector {
     return when (category) {
         PredictionCategory.POLITICS -> Icons.Default.Gavel
         PredictionCategory.SPORTS -> Icons.Default.SportsBasketball
-        PredictionCategory.ECONOMY -> Icons.Default.TrendingUp
+        PredictionCategory.ECONOMY -> Icons.AutoMirrored.Filled.TrendingUp
         PredictionCategory.CULTURE -> Icons.Default.Palette
         PredictionCategory.TECHNOLOGY -> Icons.Default.Memory
         PredictionCategory.BUSINESS -> Icons.Default.BusinessCenter

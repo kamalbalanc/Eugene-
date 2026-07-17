@@ -157,7 +157,7 @@ fun ExploreScreen(
                         FilterChip(
                             selected = selectedCategory == cat,
                             onClick = { viewModel.selectCategory(cat) },
-                            label = { Text(cat.name.lowercase().capitalize()) },
+                            label = { Text(cat.name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }) },
                             modifier = Modifier.testTag("category_chip_${cat.name.lowercase()}")
                         )
                     }
@@ -373,7 +373,7 @@ fun ExploreScreen(
                                     FilterChip(
                                         selected = isSelected,
                                         onClick = { viewModel.setTempSortBy(opt) },
-                                        label = { Text(opt.name.replace("_", " ").lowercase().capitalize()) }
+                                        label = { Text(opt.name.replace("_", " ").lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }) }
                                     )
                                 }
                             }
@@ -390,7 +390,7 @@ fun ExploreScreen(
                                     FilterChip(
                                         selected = isSelected,
                                         onClick = { viewModel.setTempTimeRange(opt) },
-                                        label = { Text(opt.name.replace("_", " ").lowercase().capitalize()) }
+                                        label = { Text(opt.name.replace("_", " ").lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }) }
                                     )
                                 }
                             }

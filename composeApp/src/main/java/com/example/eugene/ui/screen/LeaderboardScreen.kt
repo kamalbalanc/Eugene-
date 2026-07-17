@@ -85,7 +85,7 @@ fun LeaderboardScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = selectedCategory?.name?.lowercase()?.capitalize() ?: "All Categories",
+                                text = selectedCategory?.name?.lowercase()?.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() } ?: "All Categories",
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
@@ -107,7 +107,7 @@ fun LeaderboardScreen(
                         )
                         PredictionCategory.entries.forEach { cat ->
                             DropdownMenuItem(
-                                text = { Text(cat.name.lowercase().capitalize()) },
+                                text = { Text(cat.name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }) },
                                 onClick = {
                                     viewModel.selectCategory(cat)
                                     showCategoryMenu = false
@@ -188,7 +188,7 @@ fun LeaderboardScreen(
                 Text("Rep", modifier = Modifier.width(72.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
             }
 
-            Divider(modifier = Modifier.padding(horizontal = 16.dp))
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
 
             // Main ranked list
             Box(modifier = Modifier.weight(1f)) {
@@ -345,5 +345,5 @@ fun LeaderboardRow(
             textAlign = TextAlign.End
         )
     }
-    Divider(modifier = Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 }

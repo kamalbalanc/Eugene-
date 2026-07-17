@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -186,7 +188,7 @@ fun PredictionDetailScreen(
                                             .background(Color.Black.copy(alpha = 0.4f), shape = CircleShape)
                                             .testTag("back_button")
                                     ) {
-                                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                                     }
 
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -632,7 +634,7 @@ fun PredictionDetailScreen(
                                                 .testTag("post_discourse_button")
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.Send,
+                                                imageVector = Icons.AutoMirrored.Filled.Send,
                                                 contentDescription = "Post Message",
                                                 tint = MaterialTheme.colorScheme.onPrimaryContainer
                                             )

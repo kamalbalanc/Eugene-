@@ -74,7 +74,7 @@ fun NotificationsScreen(
                         onClick = { viewModel.selectTab(tab) },
                         text = {
                             Text(
-                                text = tab.name.lowercase().capitalize(),
+                                text = tab.name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.testTag("notification_tab_${tab.name.lowercase()}")
                             )
