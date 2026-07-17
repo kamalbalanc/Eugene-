@@ -19,9 +19,11 @@ prediction-market-style platform in Kotlin Multiplatform (Android + iOS).
 | **Phase 7** | Screen Implementations | **COMPLETE** | [Phase 07 Screens](status/phase_07_screens.md) |
 | **Phase 8** | Core Platform Behaviors | **COMPLETE** | [Phase 08 System](status/phase_08_system.md) |
 | **Phase 9** | Final Verification | **COMPLETE** | [Phase 09 Final](status/phase_09_final.md) |
+| **Phase 10**| Details Screen Refinement | **COMPLETE** | [Phase 10 Details Refinement](status/phase_10_details_refinement.md) |
+| **Phase 11**| Profile Screen Completion | **COMPLETE** | [Phase 11 Profile Completion](status/phase_11_profile_completion.md) |
 
 ---
 
 ## Active Phase
 
-- **None** — All Progressive Phases of the **Eugene** Platform are fully implemented, verified, and complete!
+- **None** — All Progressive Phases of the **Eugene** Platform, including the Details Screen Refinements and Profile Screen Completion, are fully implemented, verified, and complete!

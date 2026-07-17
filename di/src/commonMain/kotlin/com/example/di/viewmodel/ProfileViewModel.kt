@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 
 sealed interface ProfileUiState {
     object Loading : ProfileUiState
+    object Guest : ProfileUiState
     data class Loaded(
         val session: Session.Authenticated,
         val stats: ProfileStats,
@@ -64,58 +65,72 @@ class ProfileViewModel(
         secondRepository.observeSeconds(),
         _targetUid
     ) { session, allPredictions, allSeconds, targetId ->
-        val user = when {
-            targetId != null -> {
-                // If viewing another profile, mock/simulate that authenticated user structure
-                Session.Authenticated(
-                    uid = targetId,
-                    email = "predictor@eugene.app",
-                    name = "Top Predictor ${targetId.take(4)}",
-                    handle = "predictor_${targetId.take(4)}",
-                    avatarUrl = "https://example.com/avatar/$targetId.png",
-                    accuracy = 84,
-                    reputation = 1250,
-                    resolvedPredictionCount = 12
+        if (targetId == null && session is Session.Guest) {
+            ProfileUiState.Guest
+        } else {
+            val user = when {
+                targetId != null -> {
+                    // If viewing another profile, mock/simulate that authenticated user structure
+                    Session.Authenticated(
+                        uid = targetId,
+                        email = "predictor@eugene.app",
+                        name = "Top Predictor ${targetId.take(4)}",
+                        handle = "predictor_${targetId.take(4)}",
+                        avatarUrl = "https://example.com/avatar/$targetId.png",
+                        accuracy = 84,
+                        reputation = 1250,
+                        resolvedPredictionCount = 12
+                    )
+                }
+                session is Session.Authenticated -> session
+                else -> null
+            }
+
+            if (user == null) {
+                ProfileUiState.Loading
+            } else {
+                val userSeconds = allSeconds.filter { it.id.startsWith("user") || user.uid == "my_uid" || it.predictionId.isNotBlank() } // simulate/get user's seconds
+                val userPredictions = allPredictions.filter { it.createdBy == user.uid }
+                
+                // Stats calculations
+                val totalSeconds = userSeconds.size
+                val correctSeconds = userSeconds.count { it.status == SecondStatus.CORRECT }
+                val isEligible = user.resolvedPredictionCount >= 5
+
+                val stats = ProfileStats(
+                    reputation = user.reputation,
+                    accuracy = user.accuracy,
+                    totalSeconds = totalSeconds,
+                    correctSeconds = correctSeconds,
+                    isAccuracyEligible = isEligible
+                )
+
+                // Keep list
+                val keepTabs = keepTabRepository.observeTracked(user.uid).firstOrNull() ?: emptyList()
+
+                ProfileUiState.Loaded(
+                    session = user,
+                    stats = stats,
+                    predictions = userPredictions,
+                    seconds = userSeconds,
+                    keepTabs = keepTabs
                 )
             }
-            session is Session.Authenticated -> session
-            else -> null
-        }
-
-        if (user == null) {
-            ProfileUiState.Loading
-        } else {
-            val userSeconds = allSeconds.filter { it.id.startsWith("user") || user.uid == "my_uid" || it.predictionId.isNotBlank() } // simulate/get user's seconds
-            val userPredictions = allPredictions.filter { it.createdBy == user.uid }
-            
-            // Stats calculations
-            val totalSeconds = userSeconds.size
-            val correctSeconds = userSeconds.count { it.status == SecondStatus.CORRECT }
-            val isEligible = user.resolvedPredictionCount >= 5
-
-            val stats = ProfileStats(
-                reputation = user.reputation,
-                accuracy = user.accuracy,
-                totalSeconds = totalSeconds,
-                correctSeconds = correctSeconds,
-                isAccuracyEligible = isEligible
-            )
-
-            // Keep list
-            val keepTabs = keepTabRepository.observeTracked(user.uid).firstOrNull() ?: emptyList()
-
-            ProfileUiState.Loaded(
-                session = user,
-                stats = stats,
-                predictions = userPredictions,
-                seconds = userSeconds,
-                keepTabs = keepTabs
-            )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProfileUiState.Loading)
 
     fun setTargetUid(uid: String?) {
         _targetUid.value = uid
+    }
+
+    fun signInAs(type: String) {
+        viewModelScope.launch {
+            val email = when (type) {
+                "NEW" -> "new@example.com"
+                else -> "established@example.com"
+            }
+            authRepository.signInWithEmail(email, "password")
+        }
     }
 
     fun toggleKeepForTarget() {

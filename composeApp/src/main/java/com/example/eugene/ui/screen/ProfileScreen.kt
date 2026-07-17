@@ -27,11 +27,22 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.di.viewmodel.*
 import com.example.domain.model.Session
+import com.example.domain.model.SecondStatus
 import kotlinx.coroutines.delay
 import com.example.eugene.ui.components.EmptyState
 import com.example.eugene.ui.components.EugeneAnimationTokens
 import com.example.eugene.ui.components.EugeneShapes
 import com.example.eugene.ui.components.PredictionCard
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,6 +110,65 @@ fun ProfileScreen(
                     CircularProgressIndicator()
                 }
             }
+            ProfileUiState.Guest -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .padding(24.dp)
+                                .fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AccountCircle,
+                                contentDescription = "Sign In Required",
+                                modifier = Modifier.size(72.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Sign In Required",
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Anonymous predictors are not supported. Sign in to view your profile and participate in the Eugene prediction market.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Button(
+                                onClick = { viewModel.signInAs("ESTABLISHED") },
+                                modifier = Modifier.fillMaxWidth().testTag("guest_sign_in_established"),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Text("Sign In as Established Fan")
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.signInAs("NEW") },
+                                modifier = Modifier.fillMaxWidth().testTag("guest_sign_in_new")
+                            ) {
+                                Text("Sign In as New Predictor")
+                            }
+                        }
+                    }
+                }
+            }
             ProfileUiState.Error -> {
                 EmptyState(
                     title = "Profile Error",
@@ -112,6 +182,29 @@ fun ProfileScreen(
                 // Smooth dual-odometer logic
                 val reputationAnim = remember { Animatable(0f) }
                 val accuracyAnim = remember { Animatable(0f) }
+
+                val resolvedSecondsSorted = remember(state.seconds) {
+                    state.seconds
+                        .filter { it.status == SecondStatus.CORRECT || it.status == SecondStatus.INCORRECT }
+                        .sortedBy { it.castAt }
+                }
+
+                val accuracyTrendPoints = remember(resolvedSecondsSorted) {
+                    val points = mutableListOf<Float>()
+                    var correctCount = 0
+                    resolvedSecondsSorted.forEachIndexed { index, sec ->
+                        if (sec.status == SecondStatus.CORRECT) {
+                            correctCount++
+                        }
+                        val cumulativeAccuracy = (correctCount.toFloat() / (index + 1)) * 100f
+                        points.add(cumulativeAccuracy)
+                    }
+                    if (points.isEmpty()) {
+                        listOf(50f, 60f, 75f, 70f, 85f)
+                    } else {
+                        points
+                    }
+                }
 
                 LaunchedEffect(profile) {
                     // Reputation odometer starts 50ms before Accuracy odometer
@@ -174,40 +267,147 @@ fun ProfileScreen(
 
                             Spacer(modifier = Modifier.height(20.dp))
 
-                            // Dual Odometer stats row
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceAround
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "${reputationAnim.value.toInt()}",
-                                        style = MaterialTheme.typography.headlineLarge.copy(
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        ),
-                                        modifier = Modifier.testTag("odometer_reputation")
-                                    )
-                                    Text(
-                                        "REPUTATION",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                            // Reordered and gated stats row: Reputation (headline) | Accuracy | Correct | Total Seconds
+                            if (state.stats.isAccuracyEligible) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceAround
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${reputationAnim.value.toInt()}",
+                                                style = MaterialTheme.typography.headlineMedium.copy(
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                ),
+                                                modifier = Modifier.testTag("odometer_reputation")
+                                            )
+                                            Text(
+                                                "REPUTATION",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${accuracyAnim.value.toInt()}%",
+                                                style = MaterialTheme.typography.headlineMedium.copy(
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = MaterialTheme.colorScheme.secondary
+                                                ),
+                                                modifier = Modifier.testTag("odometer_accuracy")
+                                            )
+                                            Text(
+                                                "ACCURACY RATE",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceAround
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${state.stats.correctSeconds}",
+                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.tertiary
+                                                )
+                                            )
+                                            Text(
+                                                "CORRECT SECONDS",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${state.stats.totalSeconds}",
+                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            )
+                                            Text(
+                                                "TOTAL SECONDS",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
                                 }
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "${accuracyAnim.value.toInt()}%",
-                                        style = MaterialTheme.typography.headlineLarge.copy(
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = MaterialTheme.colorScheme.secondary
-                                        ),
-                                        modifier = Modifier.testTag("odometer_accuracy")
-                                    )
-                                    Text(
-                                        "ACCURACY RATE",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                            } else {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Lock,
+                                                contentDescription = "Locked Stats",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "Accuracy shown after 5 resolved predictions",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                textAlign = TextAlign.Center
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceAround
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${state.stats.correctSeconds}",
+                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.tertiary
+                                                )
+                                            )
+                                            Text(
+                                                "CORRECT SECONDS",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "${state.stats.totalSeconds}",
+                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                 )
+                                            )
+                                            Text(
+                                                "TOTAL SECONDS",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -224,6 +424,15 @@ fun ProfileScreen(
                             .padding(horizontal = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // Accuracy Trend Chart
+                        item {
+                            AccuracyTrendChart(
+                                points = accuracyTrendPoints,
+                                isEligible = state.stats.isAccuracyEligible,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            )
+                        }
+
                         // 1. Prediction History
                         item {
                             AccordionHeader(
@@ -285,41 +494,108 @@ fun ProfileScreen(
                         // 3. Badges (Strictly non-gamified milestone representations)
                         item {
                             AccordionHeader(
-                                title = "Milestone Achievements",
+                                title = "Milestone Achievements & Reputation Tiers",
                                 isOpen = badgesOpen,
                                 onToggle = { badgesOpen = !badgesOpen }
                             )
                         }
                         if (badgesOpen) {
-                            val mockBadges = listOf(
-                                MilestoneBadge("First Second", "Placed your initial prediction second.", Icons.Default.Lock),
-                                MilestoneBadge("Socrates", "Posted five reasoning descriptions on predictions.", Icons.Default.MenuBook),
-                                MilestoneBadge("Oracle", "Achieved an accuracy score greater than 80%.", Icons.Default.Lightbulb)
-                            )
                             item {
-                                Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                                    mockBadges.forEach { badge ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(40.dp)
-                                                    .clip(CircleShape)
-                                                    .background(MaterialTheme.colorScheme.secondaryContainer),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(badge.icon, contentDescription = badge.name, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                                            }
-                                            Spacer(modifier = Modifier.width(16.dp))
-                                            Column {
-                                                Text(badge.name, fontWeight = FontWeight.Bold)
-                                                Text(badge.desc, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            }
-                                        }
+                                val stats = state.stats
+                                val accuracy = stats.accuracy
+                                val reputation = stats.reputation
+                                val correct = stats.correctSeconds
+                                val total = stats.totalSeconds
+                                val isEligible = stats.isAccuracyEligible
+
+                                val isNewcomerUnlocked = true
+                                val isRisingUnlocked = isEligible && reputation >= 100
+                                val isAnalystUnlocked = isEligible && reputation >= 500
+                                val isExpertUnlocked = isEligible && reputation >= 1000
+
+                                val isTop10PercentUnlocked = isEligible && reputation >= 1000
+                                val isAccuracyMasterUnlocked = isEligible && accuracy >= 80
+                                val isTrendSpotterUnlocked = correct >= 5
+                                val isEarlyBirdUnlocked = total >= 3
+
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                    shape = EugeneShapes.card,
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                                ) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        // Reputation Tiers Group
+                                        Text(
+                                            text = "REPUTATION TIERS",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        MilestoneBadgeItem(
+                                            name = "Newcomer Tier",
+                                            desc = "Starting point of every predictor. Unlocked on profile creation.",
+                                            icon = Icons.Default.Person,
+                                            isEarned = isNewcomerUnlocked
+                                        )
+                                        MilestoneBadgeItem(
+                                            name = "Rising Tier",
+                                            desc = "Recognized predictor. Unlocks at 100+ Reputation.",
+                                            icon = Icons.Default.TrendingUp,
+                                            isEarned = isRisingUnlocked
+                                        )
+                                        MilestoneBadgeItem(
+                                            name = "Analyst Tier",
+                                            desc = "Accurate analytical mind. Unlocks at 500+ Reputation.",
+                                            icon = Icons.Default.Star,
+                                            isEarned = isAnalystUnlocked
+                                        )
+                                        MilestoneBadgeItem(
+                                            name = "Expert Tier",
+                                            desc = "Venerated forecasting authority. Unlocks at 1,000+ Reputation.",
+                                            icon = Icons.Default.ThumbUp,
+                                            isEarned = isExpertUnlocked
+                                        )
+
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                        Spacer(modifier = Modifier.height(16.dp))
+
+                                        // Achievement Badges Group
+                                        Text(
+                                            text = "ACHIEVEMENT BADGES",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
+                                            color = MaterialTheme.colorScheme.secondary
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        MilestoneBadgeItem(
+                                            name = "Top 10%",
+                                            desc = "Elite echelon of predictive accuracy. Unlocked at 1,000+ Reputation.",
+                                            icon = Icons.Default.Star,
+                                            isEarned = isTop10PercentUnlocked
+                                        )
+                                        MilestoneBadgeItem(
+                                            name = "Accuracy Master",
+                                            desc = "Sustained high precision. Unlocked at 80%+ Accuracy rate.",
+                                            icon = Icons.Default.Check,
+                                            isEarned = isAccuracyMasterUnlocked
+                                        )
+                                        MilestoneBadgeItem(
+                                            name = "Trend Spotter",
+                                            desc = "Keen eye for crowd patterns. Unlocked after 5 Correct Seconds.",
+                                            icon = Icons.Default.Lightbulb,
+                                            isEarned = isTrendSpotterUnlocked
+                                        )
+                                        MilestoneBadgeItem(
+                                            name = "Early Bird",
+                                            desc = "Rapid early stance on predictions. Unlocked after placing 3 Seconds.",
+                                            icon = Icons.Default.Schedule,
+                                            isEarned = isEarlyBirdUnlocked
+                                        )
                                     }
                                 }
                             }
@@ -381,3 +657,211 @@ data class MilestoneBadge(
     val desc: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector
 )
+
+@Composable
+fun MilestoneBadgeItem(
+    name: String,
+    desc: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isEarned: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (!isEarned) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)), CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = "Locked Badge",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = name,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        Column {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = if (isEarned) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+            Text(
+                text = desc,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun AccuracyTrendChart(
+    points: List<Float>,
+    isEligible: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(180.dp),
+        shape = EugeneShapes.card,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Accuracy Over Time",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "Tracks historical accuracy on resolved predictions",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                if (!isEligible) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Locked Chart",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Unlock trend chart at 5 resolved predictions",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    val primaryColor = MaterialTheme.colorScheme.primary
+                    val secondaryColor = MaterialTheme.colorScheme.secondary
+                    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val width = size.width
+                        val height = size.height
+
+                        // Draw gridlines
+                        val gridCount = 4
+                        for (i in 0..gridCount) {
+                            val y = height * i / gridCount
+                            drawLine(
+                                color = gridColor,
+                                start = androidx.compose.ui.geometry.Offset(0f, y),
+                                end = androidx.compose.ui.geometry.Offset(width, y),
+                                strokeWidth = 1f
+                            )
+                        }
+
+                        if (points.size >= 2) {
+                            val path = Path()
+                            val fillPath = Path()
+
+                            val xStep = width / (points.size - 1)
+                            val yMin = 0f
+                            val yMax = 100f
+                            val yRange = yMax - yMin
+
+                            points.forEachIndexed { i, accuracy ->
+                                val x = i * xStep
+                                val yNormalized = 1f - ((accuracy - yMin) / yRange)
+                                val y = yNormalized * height
+
+                                if (i == 0) {
+                                    path.moveTo(x, y)
+                                    fillPath.moveTo(x, height)
+                                    fillPath.lineTo(x, y)
+                                } else {
+                                    path.lineTo(x, y)
+                                    fillPath.lineTo(x, y)
+                                }
+
+                                if (i == points.size - 1) {
+                                    fillPath.lineTo(x, height)
+                                    fillPath.close()
+                                }
+                            }
+
+                            // Draw gradient fill
+                            drawPath(
+                                path = fillPath,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        primaryColor.copy(alpha = 0.25f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+
+                            // Draw main trend line
+                            drawPath(
+                                path = path,
+                                color = primaryColor,
+                                style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                            )
+
+                            // Draw points
+                            points.forEachIndexed { i, accuracy ->
+                                val x = i * xStep
+                                val yNormalized = 1f - ((accuracy - yMin) / yRange)
+                                val y = yNormalized * height
+
+                                drawCircle(
+                                    color = secondaryColor,
+                                    radius = 4.dp.toPx(),
+                                    center = androidx.compose.ui.geometry.Offset(x, y)
+                                )
+                                drawCircle(
+                                    color = Color.White,
+                                    radius = 2.dp.toPx(),
+                                    center = androidx.compose.ui.geometry.Offset(x, y)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

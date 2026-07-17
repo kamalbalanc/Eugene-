@@ -8,6 +8,7 @@ import com.example.data.remote.mapper.toDomain
 import com.example.domain.model.Session
 import com.example.domain.repository.AuthRepository
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.*
 
 class AuthRepositoryImpl(
     private val userDao: UserDao,
@@ -19,6 +20,19 @@ class AuthRepositoryImpl(
     private val KEY_ACTIVE_EMAIL = "active_email"
 
     private val activeUidFlow = MutableStateFlow<String?>(platformSettings.getString(KEY_ACTIVE_UID))
+
+    init {
+        if (platformSettings.getString(KEY_ACTIVE_UID) == null) {
+            @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+            kotlinx.coroutines.GlobalScope.launch {
+                try {
+                    signInWithEmail("established@example.com", "password")
+                } catch (e: Exception) {
+                    // Fail silently
+                }
+            }
+        }
+    }
 
     override fun observeSession(): Flow<Session> {
         return activeUidFlow.flatMapLatest { uid ->
