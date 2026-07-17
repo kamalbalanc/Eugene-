@@ -29,7 +29,7 @@ sealed interface PredictionDetailUiState {
 }
 
 enum class DetailTab {
-    OVERVIEW, TIMELINE, REASONING, DISCOURSE, RESOLUTION
+    TIMELINE, REASONING, DISCOURSE
 }
 
 class PredictionDetailViewModel(
@@ -46,7 +46,7 @@ class PredictionDetailViewModel(
     private val _predictionId = MutableStateFlow<String?>(null)
     val predictionId = _predictionId.asStateFlow()
 
-    private val _currentTab = MutableStateFlow(DetailTab.OVERVIEW)
+    private val _currentTab = MutableStateFlow(DetailTab.TIMELINE)
     val currentTab = _currentTab.asStateFlow()
 
     private val _selectedTimeRange = MutableStateFlow(TimeRange.ALL)

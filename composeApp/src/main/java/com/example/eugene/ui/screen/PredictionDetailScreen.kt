@@ -1,16 +1,20 @@
 package com.example.eugene.ui.screen
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -18,9 +22,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -29,25 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.di.viewmodel.*
-import com.example.domain.model.Comment
-import com.example.domain.model.DiscourseEntry
-import com.example.domain.model.PredictionOption
-import com.example.domain.model.PredictionStatus
-import com.example.domain.model.PredictionCategory
-import com.example.domain.model.Prediction
-import com.example.domain.model.SecondingSnapshot
-import com.example.domain.model.TimeRange
+import com.example.domain.model.*
 import com.example.eugene.ui.components.*
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.roundToInt
@@ -67,7 +63,8 @@ fun PredictionDetailScreen(
 
     var selectedOptionId by remember { mutableStateOf<String?>(null) }
     var reasoningText by remember { mutableStateOf("") }
-    var hasCasted by remember { mutableStateOf(false) }
+    var hasCastedLocal by remember { mutableStateOf(false) }
+    var showSecondSheet by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.testTag("prediction_detail_screen"),
@@ -75,12 +72,21 @@ fun PredictionDetailScreen(
     ) { innerPadding ->
         when (val state = uiState) {
             PredictionDetailUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
             }
             is PredictionDetailUiState.Error -> {
-                Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                ) {
                     EmptyState(
                         title = "Prediction Not Found",
                         description = "The requested prediction could not be loaded. It may have been deleted or archived.",
@@ -90,296 +96,816 @@ fun PredictionDetailScreen(
             }
             is PredictionDetailUiState.Success -> {
                 val prediction = state.prediction
+                val comments = state.comments
+                val discourse = state.discourse
+                val notableSeconders = state.notableSeconders
+                val session = state.session
 
-                Column(
+                // Derive whether the user has already cast a second
+                val hasAlreadyCasted = remember(session, comments) {
+                    if (session is Session.Authenticated) {
+                        comments.any { it.authorUid == session.uid }
+                    } else {
+                        false
+                    }
+                }
+                val isCasted = hasCastedLocal || hasAlreadyCasted
+
+                // Monitor scroll state of the unified lazy column list
+                val listState = rememberLazyListState()
+                val isScrollingDown = remember {
+                    derivedStateOf {
+                        listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 150
+                    }
+                }
+
+                // Smoothly animate height and padding adjustments based on list scroll position
+                val bottomBarHeight by animateDpAsState(
+                    targetValue = if (isScrollingDown.value) 64.dp else 92.dp,
+                    animationSpec = tween(EugeneAnimationTokens.Standard)
+                )
+
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .padding(innerPadding)
                 ) {
-                    // Modern Hero Banner Box at the top
-                    Box(
+                    // Unified Main List Scroll Area
+                    LazyColumn(
+                        state = listState,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(240.dp)
-                            .background(MaterialTheme.colorScheme.surface)
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
                     ) {
-                        if (prediction.heroImageUrl != null) {
-                            AsyncImage(
-                                model = prediction.heroImageUrl,
-                                contentDescription = "Detail Banner",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                                alpha = 0.45f
-                            )
-                        }
+                        // 1. Premium Backdrop Header Banner Card
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(260.dp)
+                                    .background(MaterialTheme.colorScheme.surface)
+                            ) {
+                                // Rich background image (with Unsplash abstract fallback if null/blank)
+                                val bannerUrl = prediction.heroImageUrl?.ifBlank { null }
+                                    ?: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe"
+                                
+                                AsyncImage(
+                                    model = bannerUrl,
+                                    contentDescription = "Detail Banner Backdrop",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
 
-                        // Gradient overlay for visual polish & text readability
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            Color.Transparent,
-                                            Color.Black.copy(alpha = 0.7f)
+                                // Dark overlay for text contrast and premium cinematic styling
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(
+                                                    Color.Black.copy(alpha = 0.35f),
+                                                    Color.Black.copy(alpha = 0.85f)
+                                                )
+                                            )
+                                        )
+                                )
+
+                                // Floating upper navigation row overlay
+                                Row(
+                                    modifier = Modifier
+                                        .statusBarsPadding()
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                                        .align(Alignment.TopCenter),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    IconButton(
+                                        onClick = onBack,
+                                        modifier = Modifier
+                                            .background(Color.Black.copy(alpha = 0.4f), shape = CircleShape)
+                                            .testTag("back_button")
+                                    ) {
+                                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                                    }
+
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            onClick = { /* bookmark */ },
+                                            modifier = Modifier
+                                                .background(Color.Black.copy(alpha = 0.4f), shape = CircleShape)
+                                        ) {
+                                            Icon(Icons.Default.BookmarkBorder, contentDescription = "Bookmark", tint = Color.White)
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        IconButton(
+                                            onClick = { /* options */ },
+                                            modifier = Modifier
+                                                .background(Color.Black.copy(alpha = 0.4f), shape = CircleShape)
+                                        ) {
+                                            Icon(Icons.Default.MoreVert, contentDescription = "More Options", tint = Color.White)
+                                        }
+                                    }
+                                }
+
+                                // Header texts and metadata stacked above bottom gradient
+                                Column(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(16.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        CategoryTag(category = prediction.category)
+                                        StatusBadge(status = prediction.status)
+                                    }
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = prediction.title,
+                                        style = MaterialTheme.typography.titleLarge.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            lineHeight = 28.sp
+                                        ),
+                                        maxLines = 3,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "ENDS ${formatInstant(prediction.closesAt).uppercase()}",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White.copy(alpha = 0.7f),
+                                            letterSpacing = 0.5.sp
                                         )
                                     )
-                                )
-                        )
-
-                        // Floating Navigation Back Icon
-                        IconButton(
-                            onClick = onBack,
-                            modifier = Modifier
-                                .statusBarsPadding()
-                                .padding(12.dp)
-                                .align(Alignment.TopStart)
-                                .background(Color.Black.copy(alpha = 0.4f), shape = CircleShape)
-                                .testTag("back_button")
-                        ) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-                        }
-
-                        // Floating Category and Title on top of Hero Image
-                        Column(
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CategoryTag(category = prediction.category)
-                                StatusBadge(status = prediction.status)
+                                }
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = prediction.title,
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                            )
                         }
-                    }
 
-                    // Description & Details in a content card
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        shape = EugeneShapes.card,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(
-                                text = prediction.description,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        // 2. Overview / Prediction Description Card
+                        item {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                shape = EugeneShapes.card,
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = prediction.description,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        lineHeight = 20.sp
+                                    )
 
-                            // If Resolved, show correct outcome banner
-                            if (prediction.status == PredictionStatus.RESOLVED && prediction.resolvedOutcomeId != null) {
-                                val resolvedOpt = prediction.options.firstOrNull { it.id == prediction.resolvedOutcomeId }
-                                if (resolvedOpt != null) {
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                                        shape = EugeneShapes.card,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(12.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(Icons.Default.Verified, contentDescription = "Resolved", tint = MaterialTheme.colorScheme.primary)
-                                            Spacer(modifier = Modifier.width(8.dp))
+                                    if (prediction.status == PredictionStatus.RESOLVED && prediction.resolvedOutcomeId != null) {
+                                        val resolvedOpt = prediction.options.firstOrNull { it.id == prediction.resolvedOutcomeId }
+                                        if (resolvedOpt != null) {
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Card(
+                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                                shape = EugeneShapes.card,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(12.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(Icons.Default.Verified, contentDescription = "Resolved", tint = MaterialTheme.colorScheme.primary)
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = "RESOLVED OUTCOME: ${resolvedOpt.text}",
+                                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. Outcomes & Total Seconds statistics (Read-only representation)
+                        item {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = "Current Distribution",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                OutcomeBarsList(
+                                    options = prediction.options,
+                                    selectedOptionId = null,
+                                    onOptionSelect = null // Clicking outcomes triggers no-op on details screen. Click "Second" below.
+                                )
+
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "TOTAL SECONDS CAST",
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            letterSpacing = 0.5.sp
+                                        )
+                                    )
+                                    val formattedSeconds = if (prediction.totalSeconds >= 1000) {
+                                        "${(prediction.totalSeconds / 1000.0).toString().take(4)}K"
+                                    } else {
+                                        "${prediction.totalSeconds}"
+                                    }
+                                    Text(
+                                        text = formattedSeconds,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+
+                        // 4. Sticky/Flat simplified Tabs (Timeline, Reasoning, Discourse)
+                        item {
+                            TabRow(
+                                selectedTabIndex = when (currentTab) {
+                                    DetailTab.TIMELINE -> 0
+                                    DetailTab.REASONING -> 1
+                                    DetailTab.DISCOURSE -> 2
+                                },
+                                containerColor = MaterialTheme.colorScheme.background,
+                                contentColor = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.padding(vertical = 12.dp)
+                            ) {
+                                val tabsList = listOf(DetailTab.TIMELINE, DetailTab.REASONING, DetailTab.DISCOURSE)
+                                tabsList.forEachIndexed { index, tab ->
+                                    val tabLabel = when (tab) {
+                                        DetailTab.TIMELINE -> "Timeline"
+                                        DetailTab.REASONING -> "Reasoning"
+                                        DetailTab.DISCOURSE -> "Discourse"
+                                    }
+                                    Tab(
+                                        selected = currentTab == tab,
+                                        onClick = { viewModel.selectTab(tab) },
+                                        text = {
                                             Text(
-                                                text = "RESOLVED OUTCOME: ${resolvedOpt.text}",
-                                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                text = tabLabel,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // 5. Dynamic Tab-specific content items
+                        when (currentTab) {
+                            DetailTab.TIMELINE -> {
+                                item {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "How people's seconds have changed",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.padding(bottom = 12.dp)
+                                        )
+
+                                        // Timeline visual elements card block
+                                        TimelineContent(
+                                            prediction = prediction,
+                                            viewModel = viewModel,
+                                            snapshots = viewModel.snapshots.collectAsState().value
+                                        )
+
+                                        Spacer(modifier = Modifier.height(16.dp))
+
+                                        // Top Predictors row using AvatarCluster
+                                        if (notableSeconders.isNotEmpty()) {
+                                            Text(
+                                                text = "Top Predictors",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.padding(bottom = 8.dp)
+                                            )
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(EugeneShapes.card)
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                                                    .padding(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                AvatarCluster(
+                                                    predictors = notableSeconders,
+                                                    totalCount = notableSeconders.size,
+                                                    onAvatarClick = onProfileClick
+                                                )
+                                                TextButton(onClick = { /* noop */ }) {
+                                                    Text("View all", fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(16.dp))
+                                        }
+
+                                        // Resolution Details block embedded at the very bottom of the timeline
+                                        Text(
+                                            text = "Resolution Conditions",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        )
+                                        Card(
+                                            shape = EugeneShapes.card,
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(bottom = 16.dp),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+                                        ) {
+                                            Column(modifier = Modifier.padding(16.dp)) {
+                                                Text(
+                                                    text = prediction.rulesDescription,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    lineHeight = 20.sp
+                                                )
+                                                Spacer(modifier = Modifier.height(12.dp))
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Link,
+                                                        contentDescription = "Source",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Column {
+                                                        Text("Expected Verification Source:", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                                                        Text(
+                                                            text = prediction.resolutionSource,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            DetailTab.REASONING -> {
+                                if (comments.isEmpty()) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(32.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "No reasoning has been posted yet.",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    items(comments) { comment ->
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                                            shape = EugeneShapes.card,
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                                        ) {
+                                            Column(modifier = Modifier.padding(12.dp)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(32.dp)
+                                                            .clip(CircleShape)
+                                                            .clickable { onProfileClick(comment.authorUid) }
+                                                    ) {
+                                                        AsyncImage(
+                                                            model = comment.authorAvatarUrl,
+                                                            contentDescription = comment.authorName,
+                                                            modifier = Modifier.fillMaxSize()
+                                                        )
+                                                    }
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Column {
+                                                        Text(comment.authorName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                        Text(comment.authorHandle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    }
+                                                    Spacer(modifier = Modifier.weight(1f))
+                                                    
+                                                    // Display selected outcome tag with color highlight
+                                                    val matchedOpt = prediction.options.find { it.id == comment.secondedOptionId }
+                                                    if (matchedOpt != null) {
+                                                        val isDark = isSystemInDarkTheme()
+                                                        val optionColor = EugeneColors.getAccentColor(matchedOpt.accent, isDark)
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .clip(CircleShape)
+                                                                .background(optionColor.copy(alpha = 0.12f))
+                                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = matchedOpt.text,
+                                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = optionColor
+                                                                )
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Text(
+                                                    text = comment.text,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            DetailTab.DISCOURSE -> {
+                                if (discourse.isEmpty()) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(32.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "No discourse messages yet. Start the conversation!",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    items(discourse) { entry ->
+                                        val indentation = if (entry.parentId != null) 24.dp else 0.dp
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(start = 16.dp + indentation, end = 16.dp, top = 4.dp, bottom = 4.dp)
+                                        ) {
+                                            if (entry.parentId != null) {
+                                                Icon(
+                                                    imageVector = Icons.Default.SubdirectoryArrowRight,
+                                                    contentDescription = "Reply",
+                                                    modifier = Modifier
+                                                        .size(16.dp)
+                                                        .padding(top = 4.dp),
+                                                    tint = MaterialTheme.colorScheme.outline
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                            }
+                                            Card(
+                                                modifier = Modifier.weight(1f),
+                                                shape = EugeneShapes.card,
+                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                                            ) {
+                                                Column(modifier = Modifier.padding(12.dp)) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        AsyncImage(
+                                                            model = entry.authorAvatarUrl,
+                                                            contentDescription = entry.authorName,
+                                                            modifier = Modifier
+                                                                .size(24.dp)
+                                                                .clip(CircleShape)
+                                                                .clickable { onProfileClick(entry.authorUid) }
+                                                        )
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Text(entry.authorName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                        Spacer(modifier = Modifier.weight(1f))
+                                                        Text(
+                                                            text = formatInstant(entry.postedAt),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                        )
+                                                    }
+                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                    Text(
+                                                        text = entry.text,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Interactive inline Discourse composer
+                                item {
+                                    var replyText by remember { mutableStateOf("") }
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        OutlinedTextField(
+                                            value = replyText,
+                                            onValueChange = { replyText = it },
+                                            placeholder = { Text("Add to Discourse...") },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .testTag("discourse_composer_input"),
+                                            singleLine = true,
+                                            shape = EugeneShapes.card,
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                            )
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        IconButton(
+                                            onClick = {
+                                                if (replyText.isNotBlank()) {
+                                                    viewModel.postDiscourseMessage(replyText)
+                                                    replyText = ""
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .background(MaterialTheme.colorScheme.primaryContainer, shape = CircleShape)
+                                                .testTag("post_discourse_button")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Send,
+                                                contentDescription = "Post Message",
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
                                             )
                                         }
                                     }
                                 }
                             }
                         }
+
+                        // Bottom-padding spacer item to prevent collision/overlapping with the permanent bottom bar
+                        item {
+                            Spacer(modifier = Modifier.height(110.dp))
+                        }
                     }
 
-                    // 5 Tab Rows
-                    ScrollableTabRow(
-                        selectedTabIndex = currentTab.ordinal,
-                        containerColor = MaterialTheme.colorScheme.background,
-                        contentColor = MaterialTheme.colorScheme.onBackground
+                    // 6. Permanently Visible Bottom Bar (Grows/Collapses based on scroll state)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(bottomBarHeight)
+                            .align(Alignment.BottomCenter)
+                            .background(MaterialTheme.colorScheme.surface)
+                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)))
+                            .padding(horizontal = 16.dp, vertical = if (isScrollingDown.value) 8.dp else 16.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        DetailTab.entries.forEach { tab ->
-                            Tab(
-                                selected = currentTab == tab,
-                                onClick = { viewModel.selectTab(tab) },
-                                text = {
+                        if (prediction.status != PredictionStatus.LIVE) {
+                            Text(
+                                text = "Prediction closed. Seconding is disabled.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else if (isCasted) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("cast_success_card"),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(Icons.Default.Lock, contentDescription = "Locked Choice", tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Prediction Cast Permanently. Immutable.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        } else {
+                            // Expandable / Collapsible button action
+                            Button(
+                                onClick = { showSecondSheet = true },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .fillMaxHeight()
+                                    .testTag("second_action_button"),
+                                shape = EugeneShapes.pill,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = "Second Icon")
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = tab.name.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
-                                        fontWeight = FontWeight.Bold
+                                        text = if (isScrollingDown.value) "Second" else "Place Second",
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = if (isScrollingDown.value) 13.sp else 15.sp,
+                                            letterSpacing = 0.5.sp
+                                        )
                                     )
                                 }
-                            )
+                            }
                         }
                     }
 
-                    // Tab Content view container
-                    Box(modifier = Modifier.weight(1f)) {
-                        when (currentTab) {
-                            DetailTab.OVERVIEW -> TabPrediction(
-                                options = prediction.options,
-                                selectedOptionId = selectedOptionId,
-                                hasCasted = hasCasted,
-                                isCasting = isCasting,
-                                isLive = prediction.status == PredictionStatus.LIVE,
-                                reasoningText = reasoningText,
-                                messageState = castError,
-                                onOptionSelect = { selectedOptionId = it },
-                                onReasoningChange = { reasoningText = it },
-                                onCastSecond = {
-                                    if (selectedOptionId != null) {
-                                        viewModel.submitSecond(selectedOptionId!!, reasoningText) {
-                                            hasCasted = true
-                                        }
-                                    }
-                                }
-                            )
-                            DetailTab.TIMELINE -> TabCharts(prediction = prediction, viewModel = viewModel)
-                            DetailTab.REASONING -> TabReasoning(comments = state.comments, onProfileClick = onProfileClick)
-                            DetailTab.DISCOURSE -> TabDiscourse(
-                                discourse = state.discourse,
-                                onProfileClick = onProfileClick,
-                                onPostDiscourse = { viewModel.postDiscourseMessage(it) }
-                            )
-                            DetailTab.RESOLUTION -> TabRules(prediction = prediction)
+                    // Toast host for displaying operation feedbacks
+                    if (castError != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .align(Alignment.TopCenter)
+                                .padding(16.dp)
+                        ) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                            ) {
+                                Text(
+                                    text = castError ?: "",
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
                         }
                     }
+                }
+
+                // Modal bottom sheet presented when clicking "Second" button
+                if (showSecondSheet) {
+                    SecondSheet(
+                        options = prediction.options,
+                        selectedOptionId = selectedOptionId,
+                        reasoningText = reasoningText,
+                        isCasting = isCasting,
+                        onDismissRequest = { showSecondSheet = false },
+                        onOptionSelect = { selectedOptionId = it },
+                        onReasoningChange = { reasoningText = it },
+                        onCastSecond = {
+                            if (selectedOptionId != null && reasoningText.isNotBlank()) {
+                                viewModel.submitSecond(selectedOptionId!!, reasoningText) {
+                                    hasCastedLocal = true
+                                    showSecondSheet = false
+                                }
+                            }
+                        }
+                    )
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TabPrediction(
+fun SecondSheet(
     options: List<PredictionOption>,
     selectedOptionId: String?,
-    hasCasted: Boolean,
-    isCasting: Boolean,
-    isLive: Boolean,
     reasoningText: String,
-    messageState: String?,
+    isCasting: Boolean,
+    onDismissRequest: () -> Unit,
     onOptionSelect: (String) -> Unit,
     onReasoningChange: (String) -> Unit,
-    onCastSecond: () -> Unit
+    onCastSecond: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.SpaceBetween
+    EugeneBottomSheet(
+        onDismissRequest = onDismissRequest,
+        modifier = modifier.testTag("second_bottom_sheet"),
+        isLoading = isCasting
     ) {
-        Column {
-            Text("Select Outcome to Second", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(12.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = "Place Second",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
 
+            Text(
+                text = "Select an outcome and explain your reasoning. Once cast, your decision is permanent and immutable.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Text(
+                text = "Select Outcome (Required)",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            // Selectable outcomes list
             OutcomeBarsList(
                 options = options,
                 selectedOptionId = selectedOptionId,
-                onOptionSelect = { if (isLive && !hasCasted) onOptionSelect(it) }
+                onOptionSelect = onOptionSelect
             )
-        }
 
-        Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "Add your Reasoning (Required)",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
 
-        // Second Composer Section
-        if (isLive && !hasCasted) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
+            OutlinedTextField(
+                value = reasoningText,
+                onValueChange = onReasoningChange,
+                placeholder = { Text("Explain why you are seconding this outcome...") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(110.dp)
+                    .testTag("second_composer_input"),
                 shape = EugeneShapes.card,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                enabled = !isCasting,
+                maxLines = 4,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                )
+            )
+
+            // CTA Submit button
+            Button(
+                onClick = onCastSecond,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .testTag("confirm_second_button"),
+                shape = EugeneShapes.pill,
+                enabled = selectedOptionId != null && reasoningText.isNotBlank() && !isCasting,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Add your Reasoning (Required)", fontWeight = FontWeight.SemiBold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = reasoningText,
-                        onValueChange = onReasoningChange,
-                        placeholder = { Text("Explain why you are seconding this outcome...") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(100.dp)
-                            .testTag("second_composer_input"),
-                        maxLines = 4
+                if (isCasting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = onCastSecond,
-                        enabled = selectedOptionId != null && reasoningText.isNotBlank() && !isCasting,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("confirm_second_button"),
-                        shape = CircleShape
-                    ) {
-                        if (isCasting) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary)
-                        } else {
-                            Text("Confirm Second")
-                        }
-                    }
-                }
-            }
-        } else if (hasCasted) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = EugeneShapes.card,
-                modifier = Modifier.fillMaxWidth().testTag("cast_success_card")
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(Icons.Default.Lock, contentDescription = "Locked", tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Prediction Cast Permanently. Immutable by design.", fontWeight = FontWeight.Bold)
+                } else {
+                    Text(
+                        text = "Confirm Second",
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp
+                    )
                 }
             }
         }
     }
-}
-
-fun formatInstant(instant: kotlinx.datetime.Instant): String {
-    val localDateTime = instant.toLocalDateTime(TimeZone.currentSystemDefault())
-    val hour = localDateTime.hour.toString().padStart(2, '0')
-    val minute = localDateTime.minute.toString().padStart(2, '0')
-    val day = localDateTime.dayOfMonth.toString().padStart(2, '0')
-    val month = when (localDateTime.monthNumber) {
-        1 -> "Jan"
-        2 -> "Feb"
-        3 -> "Mar"
-        4 -> "Apr"
-        5 -> "May"
-        6 -> "Jun"
-        7 -> "Jul"
-        8 -> "Aug"
-        9 -> "Sep"
-        10 -> "Oct"
-        11 -> "Nov"
-        12 -> "Dec"
-        else -> ""
-    }
-    return "$month $day, $hour:$minute"
 }
 
 @Composable
-fun TabCharts(prediction: Prediction, viewModel: PredictionDetailViewModel) {
-    val snapshots by viewModel.snapshots.collectAsState()
+fun TimelineContent(
+    prediction: Prediction,
+    viewModel: PredictionDetailViewModel,
+    snapshots: List<SecondingSnapshot>
+) {
     val selectedTimeRange by viewModel.selectedTimeRange.collectAsState()
     val isDark = isSystemInDarkTheme()
 
@@ -390,16 +916,13 @@ fun TabCharts(prediction: Prediction, viewModel: PredictionDetailViewModel) {
     val activeSnapshot = scrubbedSnapshot ?: snapshots.lastOrNull()
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = Modifier.fillMaxWidth()
     ) {
         // Timeframe selector row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp),
+                .padding(bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -435,9 +958,9 @@ fun TabCharts(prediction: Prediction, viewModel: PredictionDetailViewModel) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .height(200.dp)
                     .clip(EugeneShapes.card)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                     .padding(24.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -445,37 +968,31 @@ fun TabCharts(prediction: Prediction, viewModel: PredictionDetailViewModel) {
                     Icon(
                         imageVector = Icons.Default.Timeline,
                         contentDescription = "No data",
-                        modifier = Modifier.size(56.dp),
+                        modifier = Modifier.size(48.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "History rollups are loading...",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Please check back shortly as database indexes synchronize.",
-                        style = MaterialTheme.typography.bodySmall,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                     )
                 }
             }
         } else {
-            // Header: Display details of the active snapshot (scrubbed or current)
+            // Historical distribution values card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 16.dp),
                 shape = EugeneShapes.card,
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-                )
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -498,7 +1015,7 @@ fun TabCharts(prediction: Prediction, viewModel: PredictionDetailViewModel) {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // Outcome values breakdown
                     prediction.options.forEach { option ->
@@ -508,14 +1025,14 @@ fun TabCharts(prediction: Prediction, viewModel: PredictionDetailViewModel) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp),
+                                .padding(vertical = 3.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                                 Box(
                                     modifier = Modifier
-                                        .size(10.dp)
+                                        .size(8.dp)
                                         .clip(CircleShape)
                                         .background(color)
                                 )
@@ -530,7 +1047,7 @@ fun TabCharts(prediction: Prediction, viewModel: PredictionDetailViewModel) {
                             }
                             Text(
                                 text = "$pct%",
-                                style = MaterialTheme.typography.titleMedium,
+                                style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = color
                             )
@@ -539,14 +1056,14 @@ fun TabCharts(prediction: Prediction, viewModel: PredictionDetailViewModel) {
                 }
             }
 
-            // Interactive Chart Canvas Box
+            // Canvas Chart Box
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .height(260.dp)
                     .clip(EugeneShapes.card)
                     .border(
-                        BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                        BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
                         shape = EugeneShapes.card
                     )
                     .background(MaterialTheme.colorScheme.surface)
@@ -558,14 +1075,14 @@ fun TabCharts(prediction: Prediction, viewModel: PredictionDetailViewModel) {
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("100%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                    Text("75%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                    Text("50%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                    Text("25%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                    Text("0%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                    Text("100%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                    Text("75%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                    Text("50%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                    Text("25%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                    Text("0%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
                 }
 
-                // Interactive Chart Canvas drawing paths and detecting gestures
+                // Interactive Canvas Chart with Gestures
                 Canvas(
                     modifier = Modifier
                         .fillMaxSize()
@@ -668,7 +1185,7 @@ fun TabCharts(prediction: Prediction, viewModel: PredictionDetailViewModel) {
                             pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
                         )
 
-                        // Draw highlighting indicator nodes on each path line at the scrubbed intersection
+                        // Highlight circles
                         prediction.options.forEach { option ->
                             val color = EugeneColors.getAccentColor(option.accent, isDark)
                             val snap = snapshots[index]
@@ -689,174 +1206,29 @@ fun TabCharts(prediction: Prediction, viewModel: PredictionDetailViewModel) {
                     }
                 }
             }
-            
-            // Helpful instruction banner below
-            Text(
-                text = "💡 Tap or hold anywhere on the chart to scrub history",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                modifier = Modifier.padding(top = 8.dp)
-            )
         }
     }
 }
 
-@Composable
-fun TabReasoning(comments: List<Comment>, onProfileClick: (String) -> Unit) {
-    if (comments.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No reasons have been posted yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    } else {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(comments) { comment ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = EugeneShapes.card,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(CircleShape)
-                                    .clickable { onProfileClick(comment.authorUid) }
-                            ) {
-                                AsyncImage(
-                                    model = comment.authorAvatarUrl,
-                                    contentDescription = comment.authorName,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(comment.authorName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Text(comment.authorHandle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(comment.text, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-        }
+fun formatInstant(instant: kotlinx.datetime.Instant): String {
+    val localDateTime = instant.toLocalDateTime(TimeZone.currentSystemDefault())
+    val hour = localDateTime.hour.toString().padStart(2, '0')
+    val minute = localDateTime.minute.toString().padStart(2, '0')
+    val day = localDateTime.dayOfMonth.toString().padStart(2, '0')
+    val month = when (localDateTime.monthNumber) {
+        1 -> "Jan"
+        2 -> "Feb"
+        3 -> "Mar"
+        4 -> "Apr"
+        5 -> "May"
+        6 -> "Jun"
+        7 -> "Jul"
+        8 -> "Aug"
+        9 -> "Sep"
+        10 -> "Oct"
+        11 -> "Nov"
+        12 -> "Dec"
+        else -> ""
     }
-}
-
-@Composable
-fun TabDiscourse(
-    discourse: List<DiscourseEntry>,
-    onProfileClick: (String) -> Unit,
-    onPostDiscourse: (String) -> Unit
-) {
-    var replyText by remember { mutableStateOf("") }
-
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(discourse) { entry ->
-                // Apply visual indentation based on nesting representation (Discourse entries support parenting)
-                val indentation = if (entry.parentId != null) 24.dp else 0.dp
-                Row(modifier = Modifier.fillMaxWidth().padding(start = indentation)) {
-                    if (entry.parentId != null) {
-                        Icon(
-                            imageVector = Icons.Default.SubdirectoryArrowRight,
-                            contentDescription = "Reply",
-                            modifier = Modifier.size(16.dp).padding(top = 4.dp),
-                            tint = MaterialTheme.colorScheme.outline
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
-                    Card(
-                        modifier = Modifier.weight(1f),
-                        shape = EugeneShapes.card,
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                AsyncImage(
-                                    model = entry.authorAvatarUrl,
-                                    contentDescription = entry.authorName,
-                                    modifier = Modifier.size(24.dp).clip(CircleShape)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(entry.authorName, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(entry.text, style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Bottom discourse composer
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = replyText,
-                onValueChange = { replyText = it },
-                placeholder = { Text("Add to Discourse...") },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("discourse_composer_input"),
-                singleLine = true
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            IconButton(
-                onClick = {
-                    if (replyText.isNotBlank()) {
-                        onPostDiscourse(replyText)
-                        replyText = ""
-                    }
-                },
-                modifier = Modifier.testTag("post_discourse_button")
-            ) {
-                Icon(Icons.Default.Send, contentDescription = "Post")
-            }
-        }
-    }
-}
-
-@Composable
-fun TabRules(prediction: com.example.domain.model.Prediction) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Card(
-            shape = EugeneShapes.card,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Resolution Rules & Conditions", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(prediction.rulesDescription, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Link, contentDescription = "Source", tint = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.width(8.dp))
-            Column {
-                Text("Resolution Source Expected:", fontWeight = FontWeight.SemiBold)
-                Text(prediction.resolutionSource, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
+    return "$month $day, $hour:$minute"
 }
