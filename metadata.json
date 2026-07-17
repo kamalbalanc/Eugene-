@@ -1,0 +1,6 @@
+{
+  "name": "Eugene",
+  "description": "Eugene is a prediction-market-style mobile platform built on Kotlin Multiplatform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
